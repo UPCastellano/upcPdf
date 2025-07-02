@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Visor de PDF</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css"> <!-- Para los íconos -->
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background: linear-gradient(135deg, #e0e7ff 0%, #f0fdfa 100%); /* Fondo similar al index.html */
+      font-family: 'Segoe UI', Arial, sans-serif;
+      color: #333;
+    }
+    #pdfCanvas {
+      display: block;
+      max-width: 100vw;
+      max-height: calc(100vh - 80px); /* Deja espacio para controles */
+      box-shadow: 0 8px 32px rgba(60, 72, 100, 0.18);
+      border-radius: 8px;
+      background-color: #fff;
+      transition: all 0.3s ease-in-out; /* Transición para fullscreen */
+    }
+    #pdfCanvas:-webkit-full-screen {
+      max-width: 100%;
+      max-height: 100%;
+      width: 100vw !important;
+      height: 100vh !important;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    #pdfCanvas:-moz-full-screen {
+      max-width: 100%;
+      max-height: 100%;
+      width: 100vw !important;
+      height: 100vh !important;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    #pdfCanvas:fullscreen {
+      max-width: 100%;
+      max-height: 100%;
+      width: 100vw !important;
+      height: 100vh !important;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    .controls {
+      position: absolute;
+      bottom: 20px;
+      background-color: rgba(0, 0, 0, 0.85); /* Fondo más oscuro para mejor contraste */
+      padding: 10px 20px;
+      border-radius: 12px;
+      color: white;
+      display: flex;
+      gap: 15px;
+      align-items: center;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+      flex-wrap: wrap; /* Para responsive en controles */
+      justify-content: center;
+    }
+    .controls button {
+      background: linear-gradient(90deg, #6366f1 0%, #2563eb 100%);
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 1rem;
+      font-weight: 600;
+      transition: all 0.2s ease-in-out;
+      box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .controls button:hover {
+      background: linear-gradient(90deg, #2563eb 0%, #6366f1 100%);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+    }
+    .controls input {
+      width: 60px;
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid #a5b4fc;
+      text-align: center;
+      background-color: #f1f5f9;
+      color: #333;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .controls input:focus {
+      border-color: #6366f1;
+    }
+    .controls span {
+      font-size: 1.1rem;
+      font-weight: 500;
+    }
+
+    /* Media Queries para responsividad de controles */
+    @media (max-width: 600px) {
+      .controls {
+        padding: 8px 10px;
+        gap: 10px;
+        bottom: 10px;
+      }
+      .controls button, .controls input {
+        padding: 6px 10px;
+        font-size: 0.9rem;
+      }
+      .controls span {
+        font-size: 0.9rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="pdfCanvas"></canvas>
+
+  <div class="controls">
+    <button id="prevPage"><i class="fas fa-chevron-left"></i> Página Anterior</button>
+    <input type="number" id="pageNumber" value="1" min="1">
+    <span>/ <span id="numPages"></span></span>
+    <button id="nextPage">Página Siguiente <i class="fas fa-chevron-right"></i></button>
+    <button id="zoomOutBtn"><i class="fas fa-search-minus"></i> Zoom -</button>
+    <input type="text" id="zoomLevel" value="100%" readonly>
+    <button id="zoomInBtn"><i class="fas fa-search-plus"></i> Zoom +</button>
+    <button id="fullscreenBtn"><i class="fas fa-expand"></i> Pantalla Completa</button>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const pdfId = urlParams.get('pdfId');
+    let currentPage = parseInt(urlParams.get('page') || '1');
+    let pdfDoc = null;
+    let currentScale = 1.0; // Escala inicial
+
+    const pdfjsLib = window['pdfjs-dist/build/pdf'];
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    const canvas = document.getElementById('pdfCanvas');
+    const ctx = canvas.getContext('2d');
+    const pageNumInput = document.getElementById('pageNumber');
+    const numPagesSpan = document.getElementById('numPages');
+    const zoomLevelInput = document.getElementById('zoomLevel');
+
+    // Navegación de página
+    document.getElementById('prevPage').addEventListener('click', () => {
+      if (currentPage <= 1) return;
+      currentPage--;
+      renderPage(currentPage, currentScale);
+    });
+
+    document.getElementById('nextPage').addEventListener('click', () => {
+      if (currentPage >= pdfDoc.numPages) return;
+      currentPage++;
+      renderPage(currentPage, currentScale);
+    });
+
+    pageNumInput.addEventListener('change', () => {
+      let newPageNum = parseInt(pageNumInput.value);
+      if (isNaN(newPageNum) || newPageNum < 1) newPageNum = 1;
+      if (newPageNum > pdfDoc.numPages) newPageNum = pdfDoc.numPages;
+      currentPage = newPageNum;
+      renderPage(currentPage, currentScale);
+    });
+
+    // Funcionalidad de Zoom
+    document.getElementById('zoomInBtn').addEventListener('click', () => {
+      currentScale += 0.25;
+      renderPage(currentPage, currentScale);
+    });
+
+    document.getElementById('zoomOutBtn').addEventListener('click', () => {
+      if (currentScale <= 0.25) return; // Límite mínimo de zoom
+      currentScale -= 0.25;
+      renderPage(currentPage, currentScale);
+    });
+
+    // Botón de Pantalla Completa
+    document.getElementById('fullscreenBtn').addEventListener('click', () => {
+      if (canvas.requestFullscreen) {
+        canvas.requestFullscreen();
+      } else if (canvas.mozRequestFullScreen) { /* Firefox */
+        canvas.mozRequestFullScreen();
+      } else if (canvas.webkitRequestFullscreen) { /* Chrome, Safari and Opera */
+        canvas.webkitRequestFullscreen();
+      } else if (canvas.msRequestFullscreen) { /* IE/Edge */
+        canvas.msRequestFullscreen();
+      }
+    });
+
+    async function renderPage(num, scale = currentScale) {
+      if (!pdfDoc) return;
+
+      const page = await pdfDoc.getPage(num);
+      const viewport = page.getViewport({ scale: scale });
+
+      // Asegurarse de que el canvas se ajuste al tamaño de la pantalla en modo normal
+      // y al 100% en fullscreen, manteniendo la relación de aspecto del PDF.
+      const dpi = window.devicePixelRatio || 1;
+      let targetWidth = viewport.width;
+      let targetHeight = viewport.height;
+
+      if (!document.fullscreenElement &&
+          !document.mozFullScreenElement &&
+          !document.webkitFullscreenElement &&
+          !document.msFullscreenElement) {
+        // Calcular escala para ajustar a la ventana (sin desbordar), dejando espacio para controles
+        const containerWidth = window.innerWidth;
+        const containerHeight = window.innerHeight - 80; // Altura disponible menos controles
+        const scaleX = containerWidth / viewport.width;
+        const scaleY = containerHeight / viewport.height;
+        const fitScale = Math.min(scaleX, scaleY) * 0.95; // Un poco de margen
+
+        targetWidth = viewport.width * fitScale;
+        targetHeight = viewport.height * fitScale;
+
+        canvas.style.width = `${targetWidth}px`;
+        canvas.style.height = `${targetHeight}px`;
+
+      } else {
+        // En fullscreen, usar el 100% del viewport del navegador
+        canvas.style.width = '100vw';
+        canvas.style.height = '100vh';
+      }
+
+      canvas.height = targetHeight * dpi;
+      canvas.width = targetWidth * dpi;
+      ctx.scale(dpi, dpi); // Escalar el contexto para alta resolución
+
+      const renderContext = {
+        canvasContext: ctx,
+        viewport: page.getViewport({ scale: scale * dpi }), // Renderizar con la escala de DPI
+      };
+      await page.render(renderContext).promise;
+
+      pageNumInput.value = num;
+      numPagesSpan.textContent = pdfDoc.numPages;
+      zoomLevelInput.value = `${Math.round(scale * 100)}%`;
+    }
+
+    async function loadPdf() {
+      if (!pdfId) {
+        alert('PDF ID no proporcionado.');
+        return;
+      }
+      const pdfUrl = `/api/pdf/${pdfId}`;
+      try {
+        const loadingTask = pdfjsLib.getDocument(pdfUrl);
+        pdfDoc = await loadingTask.promise;
+        // Determinar escala inicial para que quepa en la pantalla
+        const page = await pdfDoc.getPage(currentPage);
+        const viewport = page.getViewport({ scale: 1 });
+        const containerWidth = window.innerWidth;
+        const containerHeight = window.innerHeight - 80; // Altura disponible menos controles
+        const scaleX = containerWidth / viewport.width;
+        const scaleY = containerHeight / viewport.height;
+        currentScale = Math.min(scaleX, scaleY) * 0.95; // Ajusta un poco para margen
+
+        renderPage(currentPage, currentScale);
+      } catch (error) {
+        alert('Error al cargar el PDF: ' + error.message);
+        console.error('Error al cargar el PDF:', error);
+      }
+    }
+
+    // Detectar cambios en el modo fullscreen para re-renderizar
+    document.addEventListener('fullscreenchange', () => renderPage(currentPage, currentScale));
+    document.addEventListener('mozfullscreenchange', () => renderPage(currentPage, currentScale));
+    document.addEventListener('webkitfullscreenchange', () => renderPage(currentPage, currentScale));
+    document.addEventListener('msfullscreenchange', () => renderPage(currentPage, currentScale));
+
+    window.addEventListener('resize', () => renderPage(currentPage, currentScale));
+
+    loadPdf();
+  </script>
+</body>
+</html> 

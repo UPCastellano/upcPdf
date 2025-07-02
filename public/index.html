@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Buscador de PDFs en Google Drive</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+  <style>
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: linear-gradient(135deg, #e0e7ff 0%, #f0fdfa 100%);
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 40px auto;
+      background: #fff;
+      border-radius: 18px;
+      box-shadow: 0 8px 32px rgba(60, 72, 100, 0.18);
+      padding: 36px 28px 28px 28px;
+      position: relative;
+      overflow: hidden;
+    }
+    .container:before {
+      content: '';
+      position: absolute;
+      top: -80px; left: -80px;
+      width: 200px; height: 200px;
+      background: radial-gradient(circle, #6366f1 0%, #fff0 80%);
+      opacity: 0.15;
+      z-index: 0;
+    }
+    h1 {
+      text-align: center;
+      color: #2563eb;
+      margin-bottom: 32px;
+      font-size: 2.2rem;
+      letter-spacing: 1px;
+      font-weight: 800;
+      text-shadow: 0 2px 8px #c7d2fe;
+    }
+    .search-bar, .codigo-bar {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      z-index: 1;
+      position: relative;
+    }
+    .search-bar select, .search-bar input, .codigo-bar input {
+      padding: 10px 14px;
+      border: 1.5px solid #a5b4fc;
+      border-radius: 8px;
+      font-size: 1.08rem;
+      outline: none;
+      min-width: 180px;
+      background: #f1f5f9;
+      transition: border 0.2s;
+    }
+    .search-bar select:focus, .search-bar input:focus, .codigo-bar input:focus {
+      border-color: #6366f1;
+    }
+    .search-bar .select2-container {
+      min-width: 220px;
+      max-width: 350px;
+      width: 100% !important;
+    }
+    .search-bar button, .codigo-bar button {
+      background: linear-gradient(90deg, #6366f1 0%, #2563eb 100%);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 22px;
+      font-size: 1.08rem;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 2px 8px #c7d2fe33;
+      transition: background 0.2s, box-shadow 0.2s;
+    }
+    .search-bar button:hover, .codigo-bar button:hover {
+      background: linear-gradient(90deg, #2563eb 0%, #6366f1 100%);
+      box-shadow: 0 4px 16px #6366f133;
+    }
+    .selected-pdf {
+      text-align: center;
+      margin-bottom: 10px;
+      color: #6366f1;
+      font-weight: bold;
+      font-size: 1.1rem;
+      letter-spacing: 0.5px;
+    }
+    table.dataTable {
+      width: 100% !important;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #fff;
+      box-shadow: 0 2px 12px #6366f122;
+      z-index: 1;
+      position: relative;
+    }
+    .dataTables_wrapper .dataTables_paginate .paginate_button {
+      background: #f1f5f9;
+      border-radius: 6px;
+      margin: 0 2px;
+      color: #6366f1 !important;
+      border: none;
+    }
+    .dataTables_wrapper .dataTables_paginate .paginate_button.current {
+      background: #6366f1 !important;
+      color: #fff !important;
+    }
+    @media (max-width: 700px) {
+      .container { padding: 10px; }
+      .search-bar, .codigo-bar { flex-direction: column; align-items: stretch; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1><i class="fa-solid fa-magnifying-glass"></i> Buscador de PDFs en Google Drive</h1>
+    <div class="codigo-bar">
+      <input type="text" id="codigoPagina" placeholder="Buscar por código de página (ej: 2053)">
+      <button id="buscarCodigoBtn"><i class="fa-solid fa-barcode"></i> Buscar por código</button>
+    </div>
+    <div class="selected-pdf" id="selectedPdfName">Ningún PDF seleccionado</div>
+    <div class="search-bar">
+      <select id="pdfSelect">
+        <option value="">Buscar y seleccionar PDF...</option>
+      </select>
+      <input type="number" id="searchPage" min="1" placeholder="Ir a página...">
+      <button id="searchBtn"><i class="fa-solid fa-search"></i> Buscar</button>
+    </div>
+    <table id="pdfTable" class="display">
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Ver</th>
+          <th>Descargar</th>
+          <th>Tamaño (MB)</th>
+          <th>Fecha de creación</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+  <script>
+    let table;
+    let allPdfs = [];
+    let selectedPdf = null;
+    let codigosPaginas = [];
+
+    // Cargar ambos: codigos_paginas.json y los PDFs antes de inicializar todo
+    function inicializarApp() {
+      // Inicializa Select2
+      $('#pdfSelect').select2({
+        placeholder: "Buscar y seleccionar PDF...",
+        allowClear: true,
+        width: 'resolve',
+        language: {
+          noResults: function() {
+            return "No se encontraron PDFs";
+          }
+        }
+      });
+
+      table = $('#pdfTable').DataTable({
+        data: allPdfs,
+        columns: [
+          { data: 'name' },
+          {
+            data: 'id',
+            render: function(pdfId, type, row) {
+              // Abrir el visor de Google Drive
+              return `<a href="https://drive.google.com/file/d/${pdfId}/view" target="_blank"><i class="fa-solid fa-eye"></i> Ver PDF</a>`;
+            }
+          },
+          {
+            data: 'url',
+            render: function(url) {
+              return `<a href="${url}" target="_blank"><i class="fa-solid fa-download"></i> Descargar</a>`;
+            }
+          },
+          {
+            data: 'size',
+            render: function(size) {
+              return size ? (size / 1024 / 1024).toFixed(2) : 'N/A';
+            }
+          },
+          {
+            data: 'createdTime',
+            render: function(date) {
+              return new Date(date).toLocaleString();
+            }
+          }
+        ],
+        language: {
+          url: '//cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json'
+        }
+      });
+
+      // Llenar el select de PDFs
+      allPdfs.forEach(pdf => {
+        $('#pdfSelect').append(`<option value="${pdf.id}">${pdf.name}</option>`);
+      });
+      $('#pdfSelect').trigger('change');
+
+      // Selección de PDF desde el select
+      $('#pdfSelect').on('change', function() {
+        const pdfId = $(this).val();
+        if (!pdfId) {
+          selectedPdf = null;
+          $('#selectedPdfName').text('Ningún PDF seleccionado');
+          table.clear().rows.add(allPdfs).draw();
+          return;
+        }
+        selectedPdf = allPdfs.find(pdf => pdf.id === pdfId);
+        $('#selectedPdfName').text('Seleccionado: ' + selectedPdf.name);
+        table.clear().rows.add([selectedPdf]).draw();
+      });
+
+      // Búsqueda por página en el PDF seleccionado
+      $('#searchBtn').on('click', function() {
+        const page = parseInt($('#searchPage').val());
+        if (!selectedPdf) {
+          alert('Selecciona un PDF primero.');
+          return;
+        }
+        if (!page || page < 1) {
+          alert('Introduce un número de página válido.');
+          return;
+        }
+        // Buscar el rango de páginas para el PDF seleccionado
+        if (!Array.isArray(codigosPaginas)) {
+          alert('No se pudo cargar la información de rangos de páginas.');
+          return;
+        }
+        console.log('pdfId seleccionado:', selectedPdf.id);
+        console.log('pdfId en codigos_paginas.json:', codigosPaginas.map(c => c.pdfId));
+        const rango = codigosPaginas.find(c => c.pdfId === selectedPdf.id);
+        if (!rango) {
+          alert('No se encontró el rango de páginas para este PDF.');
+          return;
+        }
+        if (page < rango.paginaInicio || page > rango.paginaFin) {
+          alert(`La página debe estar entre ${rango.paginaInicio} y ${rango.paginaFin} para este PDF.`);
+          return;
+        }
+        // Abrir el visor personalizado en la página indicada
+        window.open(`viewer.html?pdfId=${selectedPdf.id}&page=${page}`, '_blank');
+      });
+
+      // Búsqueda por código de página en el PDF seleccionado
+      $('#buscarCodigoBtn').on('click', function() {
+        const codigo = $('#codigoPagina').val().trim();
+        if (!selectedPdf) {
+          alert('Selecciona un PDF primero.');
+          return;
+        }
+        if (!codigo) {
+          alert('Introduce un código de página.');
+          return;
+        }
+        $.get('/api/buscar-codigo?codigo=' + encodeURIComponent(codigo) + '&pdfId=' + encodeURIComponent(selectedPdf.id), function(res) {
+          if (res && res.pdfId && res.pagina) {
+            // Abrir el visor personalizado en la página exacta
+            window.open(`viewer.html?pdfId=${res.pdfId}&page=${res.pagina}`, '_blank');
+          } else {
+            alert('No se encontró el código en este PDF.\nVerifica que el código esté dentro del rango de este archivo.');
+          }
+        }).fail(function(xhr) {
+          if(xhr.responseJSON && xhr.responseJSON.error) {
+            alert('Error: ' + xhr.responseJSON.error);
+          } else {
+            alert('No se encontró el código en este PDF.');
+          }
+        });
+      });
+    }
+
+    // Cargar ambos recursos antes de inicializar
+    $.get('/codigos_paginas.json', function(codigos) {
+      codigosPaginas = Array.isArray(codigos) ? codigos : [];
+      console.log('pdfId en codigos_paginas.json:', codigosPaginas.map(c => c.pdfId));
+      $.get('/api/drive-files', function(pdfs) {
+        allPdfs = Array.isArray(pdfs) ? pdfs : [];
+        console.log('id en /api/drive-files:', allPdfs.map(p => p.id));
+        inicializarApp();
+      });
+    });
+  </script>
+</body>
+</html> 
