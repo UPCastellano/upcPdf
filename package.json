@@ -2,7 +2,7 @@
   "name": "pdf-busqueda-drive",
   "version": "1.0.0",
   "description": "Visualizador de PDFs de Google Drive en DataTables",
-  "main": "app.js",
+  "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
